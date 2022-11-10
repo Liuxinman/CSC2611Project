@@ -1,88 +1,66 @@
-import string
-import re
 import os
 import math
-import numpy as np
-import pandas as pd
-import nltk
-
-nltk.download("stopwords")
-nltk.download("punkt")
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
-from nltk.stem import PorterStemmer
-from gensim.corpora import Dictionary
+import argparse
 from tqdm import tqdm
 
+from gensim.corpora import Dictionary
 
-def contain_punc(word):
-    punctuation = [p for p in string.punctuation]
-    for p in punctuation:
-        if p in word:
-            return True
-    return False
+from preprocess import read_csv, write_csv, read_parquet, write_parquet, Preprocessor
 
 
-def contain_alpha(word):
-    return re.search("[a-zA-Z]+", word)
+def get_args(print_args=True):
+    def int_list(x):
+        # 10,11,12
+        # [10, 11, 12]
+        return list(map(int, x.split(",")))
+    
+
+    def int_list_2d(x):
+        # 10,11,12;1,2,3,4,5
+        # [[10, 11, 12], [1, 2, 3, 4, 5]]
+        return [list(map(int, r.split(","))) for r in x.split(";")]
 
 
-def remove_emoji(text):
-    regrex_pattern = re.compile(
-        pattern="["
-        "\U0001F600-\U0001F64F"  # emoticons
-        "\U0001F300-\U0001F5FF"  # symbols & pictographs
-        "\U0001F680-\U0001F6FF"  # transport & map symbols
-        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
-        "\U00002702-\U000027B0"
-        "\U000024C2-\U0001F251"
-        "]+",
-        flags=re.UNICODE,
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--data_dir", type=str, required=True)
+    parser.add_argument(
+        "--year",
+        type=int_list,
+        required=True,
     )
-    return regrex_pattern.sub(r"", text)
+    parser.add_argument("--month", type=int_list_2d, required=True)
+
+    args = parser.parse_args()
+
+    if print_args:
+        _print_args(args)
+    return args
 
 
-def read_csv(path):
-    df = pd.read_csv(path, lineterminator="\n")
-    text = df["text"].to_list()
-    return text
-
-
-def preprocess(corpus, remove_stopwords=True):
-    # lower-case, stem, remove punctuation, remove emoji
-    tokenized_sent = []
-    ps = PorterStemmer()
-    stop_words = stopwords.words("english")
-    for s in tqdm(corpus):
-        sent = []
-        for w in word_tokenize(s):
-            w = remove_emoji(w)
-            if (
-                len(w) > 0
-                and contain_alpha(w)
-                and not contain_punc(w)
-                and ((not remove_stopwords) or (w not in stop_words))
-            ):
-                sent.append(ps.stem(w.lower()))
-        tokenized_sent.append(sent)
-
-    return tokenized_sent
+def _print_args(args):
+    """Print arguments."""
+    print("------------------------ arguments ------------------------", flush=True)
+    str_list = []
+    for arg in vars(args):
+        dots = "." * (48 - len(arg))
+        str_list.append("  {} {} {}".format(arg, dots, getattr(args, arg)))
+    for arg in sorted(str_list, key=lambda x: x.lower()):
+        print(arg, flush=True)
+    print("-------------------- end of arguments ---------------------", flush=True)
 
 
 def gen_vocab(data_dir, year, month, min_freq=5):
     if os.path.isfile(f"{data_dir}/vocab.csv"):
-        vocab_df = pd.read_csv(f"{data_dir}/vocab.csv")
-        vocab = vocab_df["vocab"].to_list()
+        vocab = read_csv(f"{data_dir}/vocab.csv", key="vocab")
         return vocab
+    
     corpus = []
+    preprocessor = Preprocessor(remove_stopwords=True)
     for i in tqdm(range(len(year))):
         for j in tqdm(range(len(month[i]))):
-            corpus_m = read_csv(f"{data_dir}/{year[i]}_merged/{month[i][j]}_merged.csv")
-            corpus_m = preprocess(corpus_m)  # list of sentences
-            df = pd.DataFrame({"corpus": corpus_m})
-            df.to_parquet(
-                f"{data_dir}/{year[i]}_merged/{month[i][j]}_preprocessed.parquet", index=False
-            )
+            corpus_m = preprocessor.preprocess(data_path = f"{data_dir}/{year[i]}_merged/{month[i][j]}_merged.csv")  # list of sentences
+            write_parquet(path=f"{data_dir}/{year[i]}_merged/{month[i][j]}_preprocessed.parquet", data_dct={"corpus": corpus_m})
             corpus += corpus_m
 
     dct = Dictionary(corpus)
@@ -91,27 +69,22 @@ def gen_vocab(data_dir, year, month, min_freq=5):
     vocab = [key for key in token2id if cfs[token2id[key]] >= min_freq]
     print(f"Vocabulary Size: {len(vocab)}")
 
-    df = pd.DataFrame({"vocab": vocab})
-    df.to_csv(f"{data_dir}/vocab.csv", index=False)
+    write_csv(path=f"{data_dir}/vocab.csv", data_dct={"vocab":vocab})
 
     return vocab
 
 
 if __name__ == "__main__":
+    args = get_args()
+    
     # generate vocabulary
-    year = [2019, 2020]
-    month = [[10, 11, 12], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]]
-    data_dir = "/Users/xinmanliu/Documents/CourseUT/2611/project/CSC2611Project/tweet_dataset"
-    vocab = gen_vocab(data_dir, year, month)
+    vocab = gen_vocab(args.data_dir, args.year, args.month)
 
     stat_dct = {"vocab": vocab}
     # for each w in V, calc monthly word freq and tf-idf
-    for i in tqdm(range(len(year))):
-        for j in tqdm(range(len(month[i]))):
-            corpus_ij = pd.read_parquet(
-                f"{data_dir}/{year[i]}_merged/{month[i][j]}_preprocessed.parquet"
-            )
-            corpus_ij = corpus_ij["corpus"].tolist()
+    for i in tqdm(range(len(args.year))):
+        for j in tqdm(range(len(args.month[i]))):
+            corpus_ij = read_parquet(path=f"{args.data_dir}/{args.year[i]}_merged/{args.month[i][j]}_preprocessed.parquet", key="corpus")
             dct_ij = Dictionary(corpus_ij)
             term_freq_ij = []
             tf_idf_ij = []
@@ -127,7 +100,7 @@ if __name__ == "__main__":
                 else:
                     term_freq_ij.append(0)
                     tf_idf_ij.append(0)
-            stat_dct[f"tf_{year[i]}_{month[i][j]}"] = term_freq_ij
-            stat_dct[f"tf_idf_{year[i]}_{month[i][j]}"] = tf_idf_ij
-    stat_df = pd.DataFrame(stat_dct)
-    stat_df.to_csv(f"{data_dir}/vocab_stat.csv")
+            stat_dct[f"tf_{args.year[i]}_{args.month[i][j]}"] = term_freq_ij
+            stat_dct[f"tf_idf_{args.year[i]}_{args.month[i][j]}"] = tf_idf_ij
+    
+    write_csv(path=f"{args.data_dir}/vocab_stat.csv", data_dct=stat_dct)
