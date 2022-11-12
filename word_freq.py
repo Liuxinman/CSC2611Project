@@ -29,6 +29,7 @@ def get_args(print_args=True):
         required=True,
     )
     parser.add_argument("--month", type=int_list_2d, required=True)
+    parser.add_argument("--min_count", type=int, default=5)
 
     args = parser.parse_args()
 
@@ -82,7 +83,7 @@ if __name__ == "__main__":
     args = get_args()
 
     # generate vocabulary
-    vocab = gen_vocab(args.data_dir, args.year, args.month)
+    vocab = gen_vocab(args.data_dir, args.year, args.month, args.min_count)
 
     stat_dct = {"vocab": vocab}
     # for each w in V, calc monthly word freq and tf-idf

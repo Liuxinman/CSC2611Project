@@ -16,8 +16,9 @@ from utils import read_csv
 
 
 class Preprocessor:
-    def __init__(self, remove_stopwords=True):
+    def __init__(self, remove_stopwords=True, stem=False):
         self.remove_stopwords = remove_stopwords
+        self.stem = stem
 
     def _contain_punc(self, word):
         punctuation = [p for p in string.punctuation]
@@ -59,8 +60,11 @@ class Preprocessor:
                     and self._contain_alpha(w)
                     and not self._contain_punc(w)
                     and ((not self.remove_stopwords) or (w not in stop_words))
-                ):
-                    sent.append(ps.stem(w.lower()))
+                ):  
+                    if self.stem:
+                        sent.append(ps.stem(w.lower()))
+                    else:
+                        sent.append(w.lower())
             tokenized_sent.append(sent)
 
         return tokenized_sent

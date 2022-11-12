@@ -1,6 +1,6 @@
 import pandas as pd
 from tqdm import tqdm
-from retrieve_dataset import get_month_days
+from dataset.retrieve_dataset import get_month_days
 
 dataset_dir = "/Users/xinmanliu/Documents/CourseUT/2611/project/CSC2611Project/tweet_dataset"
 year = 2020
