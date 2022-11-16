@@ -132,6 +132,9 @@ def save_response_to_csv(args, month, responses, day=None):
 
 
 def save_tweet(args, month, client, day=None):
+    if os.path.isfile(f"{args.data_dir}/{args.year}/{month}/{day}.csv"):
+        return
+
     start_time = time.time()
     
     if day:

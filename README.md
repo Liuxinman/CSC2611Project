@@ -26,9 +26,79 @@ during the COVID-19 pandemic. Specifically, the short-term changes in word conte
 
 ## Getting Started
 
+### Environment
+
+```shell
+python==3.9.13
+pandas==1.5.0
+numpy==1.23.3
+nltk==3.7
+gensim==4.2.0
+scikit-learn==1.1.2
+```
+
 ### Dataset
 
+1.   To use Twitter full-archive API to access data from Twitter, please first apply Academic Research access level. Then, modify  `.env`  file to enter your private keys and tokens.
 
+     ```shell
+     API_KEY=...
+     API_KEY_SECRET=...
+     ACCESS_TOKEN=...
+     ACCESS_TOKEN_SECRET=...
+     BEARER_TOKEN=...
+     ```
+
+2.   Run **dataset/retrieve_dataset.py** by `sh dataset/retrieve_dataset.sh`. 
+
+     ```
+     python dataset/retrieve_dataset.py \
+         --data_dir=/path/to/tweet_dataset \
+         --year=2019 \
+         --months=1,2,3,4,5,6,7,8,9,10,11,12
+     ```
+
+     Modify **dataset/retrieve_dataset.sh** as needed.
+
+     | Argument | Type     | Description                            |
+     | -------- | -------- | -------------------------------------- |
+     | data_dir | str      | data directory path to save tweet data |
+     | year     | int      | year of data to retrieve               |
+     | months   | int_list | months in the year of data to retrieve |
+
+     The generated data directory looks as follows:
+     ```txt
+     .
+     ├── 2019
+         ├── 10
+         │   ├── 1.csv
+         │   ├── 2.csv
+         │   ├── ...
+         │   ├── 30.csv
+         │   └── 31.csv
+         ├── 11
+         │   ├── 1.csv
+         │   ├── 2.csv
+         │   ├── ...
+         │   ├── 29.csv
+         │   └── 30.csv
+         ├── 12
+             ├── 1.csv
+             ├── 2.csv
+             ├── ...
+             ├── 30.csv
+             └──  31.csv
+     ```
+
+3.   Run **dataset/merge_dataset.py** to merge daily data into monthly data. Modify `dataset_dir` in **dataset/merge_dataset.py** as needed.
+
+     ```txt
+     .
+     ├── 2019_merged
+         ├── 10_merged.csv
+         ├── 11_merged.csv
+         └── 12_merged.csv
+     ```
 
 ### Time Series
 
