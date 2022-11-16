@@ -1,8 +1,10 @@
 import os
 import argparse
+import pickle
+import numpy as np
 from tqdm import tqdm
 
-from gensim.models import Word2Vec
+from gensim.models import Word2Vec, KeyedVectors
 from gensim.models.word2vec import LineSentence
 
 from preprocess import Preprocessor
@@ -46,6 +48,7 @@ def get_args(print_args=True):
 
     parser.add_argument("--save_preprocessed_corpus", action="store_true")
     parser.add_argument("--rewrite_saved_corpus", action="store_true")
+    parser.add_argument("--save_merged_emb", action="store_true")
 
     args = parser.parse_args()
 
@@ -136,6 +139,33 @@ def gen_vectors_preinit(args, year, month):
     print("Model saved")
 
 
+def merge_emb(args):
+    wv = []
+    for i in range(len(args.year)):
+        for j in range(len(args.month[i])):
+            wv.append(
+                KeyedVectors.load_word2vec_format(
+                    f"{args.output_dir}/vector/{args.year[i]}_{args.month[i][j]}.w2v", binary=False
+                )
+            )
+
+    vocab = set({})
+    for i in range(len(wv)):
+        vocab = vocab.union(set(wv[i].key_to_index.keys()))
+    vocab = list(vocab)
+    emb = np.zeros((len(vocab), len(wv), args.vector_size))
+    for i in range(len(vocab)):
+        for j in range(len(wv)):
+            if vocab[i] in wv[j].key_to_index:
+                emb[i, j, :] = wv[j][vocab[i]]
+
+    with open(f"{args.output_dir}/word2vec_emb.plk", "wb") as f:
+        pickle.dump((args.year, args.month, vocab, emb), f)
+    print(
+        f"{args.year[0]}/{args.month[0][0]} ~ {args.year[-1]}/{args.month[-1][-1]} merged embedding saved to {args.output_dir}/word2vec_emb.plk"
+    )
+
+
 if __name__ == "__main__":
     args = get_args()
     os.makedirs(f"{args.output_dir}/vector", exist_ok=True)
@@ -151,3 +181,6 @@ if __name__ == "__main__":
         for j in tqdm(range(0, len(args.month[i]))):
             preprocess(args, args.year[i], args.month[i][j])
             gen_vectors_preinit(args, args.year[i], args.month[i][j])
+
+    if args.save_merged_emb:
+        merge_emb(args)
