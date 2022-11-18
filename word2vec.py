@@ -1,4 +1,5 @@
 import os
+import csv
 import argparse
 import pickle
 import numpy as np
@@ -6,6 +7,9 @@ from tqdm import tqdm
 
 from gensim.models import Word2Vec, KeyedVectors
 from gensim.models.word2vec import LineSentence
+
+from scipy.stats import pearsonr
+from sklearn.metrics.pairwise import cosine_similarity
 
 from preprocess import Preprocessor
 from utils import write_txt
@@ -166,6 +170,52 @@ def merge_emb(args):
     )
 
 
+def evaluation(args, eval_type="sim"):
+    fname = {
+        "sim": "wordsim_similarity_goldstandard.txt",
+        "rel": "wordsim_relatedness_goldstandard.txt",
+    }
+    if eval_type not in fname:
+        print(f"Invalid eval_type: {eval_type}! -- sim/rel")
+        return
+
+    # Read WordSim353
+    sim_w, sim = {}, []
+    with open(f"{args.data_dir}/wordsim353/{fname[eval_type]}", "r") as f:
+        reader = csv.reader(f, delimiter="\t")
+        i = 0
+        for row in reader:
+            sim_w[(row[0], row[1])] = i
+            sim.append(float(row[2]))
+            i += 1
+
+    # evaluation
+    print(f"\n********************** {eval_type.upper()} Evaluation **********************")
+    for i in range(len(args.year)):
+        for j in range(len(args.month[i])):
+            sim_copy = sim.copy()
+
+            w2v = KeyedVectors.load_word2vec_format(
+                f"{args.output_dir}/vector/{args.year[i]}_{args.month[i][j]}.w2v", binary=False
+            )
+            s_word2vec = np.zeros_like(sim_copy)
+            missing = []
+            for v, w in sim_w.keys():
+                if v in w2v.key_to_index and w in w2v.key_to_index:
+                    s_word2vec[sim_w[(v, w)]] = cosine_similarity(
+                        w2v[v].reshape(1, -1), w2v[w].reshape(1, -1)
+                    )[0][0]
+                else:
+                    missing.append((v, w, sim_w[(v, w)]))
+
+            for t in missing:
+                sim_copy[t[2]] = 0
+            print(
+                f"Pearson correlation between s and s_word2vec - {args.year[i]}/{args.month[i][j]}: {pearsonr(sim_copy, s_word2vec)}"
+            )
+            # print(missing)
+
+
 if __name__ == "__main__":
     args = get_args()
     os.makedirs(f"{args.output_dir}/vector", exist_ok=True)
@@ -177,10 +227,13 @@ if __name__ == "__main__":
     preprocess(args, year_0, month_0)
     gen_vectors(args, year_0, month_0)
 
-    for i in tqdm(range(0, len(args.year))):
-        for j in tqdm(range(0, len(args.month[i]))):
+    for i in range(0, len(args.year)):
+        for j in range(0, len(args.month[i])):
             preprocess(args, args.year[i], args.month[i][j])
             gen_vectors_preinit(args, args.year[i], args.month[i][j])
 
     if args.save_merged_emb:
         merge_emb(args)
+    
+    evaluation(args, "sim")
+    evaluation(args, "rel")
