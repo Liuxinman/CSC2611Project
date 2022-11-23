@@ -12,7 +12,7 @@ from scipy.stats import pearsonr
 from sklearn.metrics.pairwise import cosine_similarity
 
 from preprocess import Preprocessor
-from utils import write_txt
+from utils import write_txt, _print_args
 
 
 def get_args(print_args=True):
@@ -59,18 +59,6 @@ def get_args(print_args=True):
     if print_args:
         _print_args(args)
     return args
-
-
-def _print_args(args):
-    """Print arguments."""
-    print("------------------------ arguments ------------------------", flush=True)
-    str_list = []
-    for arg in vars(args):
-        dots = "." * (48 - len(arg))
-        str_list.append("  {} {} {}".format(arg, dots, getattr(args, arg)))
-    for arg in sorted(str_list, key=lambda x: x.lower()):
-        print(arg, flush=True)
-    print("-------------------- end of arguments ---------------------", flush=True)
 
 
 def preprocess(args, year, month):

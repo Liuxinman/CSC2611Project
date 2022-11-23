@@ -36,3 +36,16 @@ def write_txt(path, data):
     with open(path, "w") as f:
         data = [" ".join(text) for text in data]
         f.write("\n".join(data))
+
+
+def _print_args(args):
+    """Print arguments."""
+    print("------------------------ arguments ------------------------", flush=True)
+    str_list = []
+    for arg in vars(args):
+        dots = "." * (48 - len(arg))
+        str_list.append("  {} {} {}".format(arg, dots, getattr(args, arg)))
+    for arg in sorted(str_list, key=lambda x: x.lower()):
+        print(arg, flush=True)
+    print("-------------------- end of arguments ---------------------", flush=True)
+
