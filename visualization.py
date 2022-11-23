@@ -45,115 +45,165 @@ def get_args(print_args=True):
     return args
 
 
-def gen_emb_clusters(model_path, keys, topn=30):
-    model_gn = KeyedVectors.load_word2vec_format(
-        model_path,
-        binary=False,
-    )
+class TsnePlotter:
+    def __init__(self, model_path, output_dir, keys, year, month, plot_topn=5, tsne_topn=30):
+        self.keys = keys
+        self.model_path = model_path
+        self.plot_topn = plot_topn
+        self.tsne_topn = tsne_topn
+        self.year = year
+        self.month = month
+        self.output_dir = output_dir
 
-    embedding_clusters = []
-    word_clusters = []
-    for word in keys:
-        embeddings = []
-        words = []
-        words.append(word)
-        embeddings.append(model_gn.get_vector(word, norm=True))
-        for similar_word, _ in model_gn.most_similar(word, topn=topn):
-            words.append(similar_word)
-            embeddings.append(model_gn.get_vector(similar_word, norm=True))
-        embedding_clusters.append(embeddings)
-        word_clusters.append(words)
-    return np.array(embedding_clusters), word_clusters
+    def create_tsne_plot(self):
+        emb_2d_all = []  # #intervals * #keywords * emb dim
+        word_cluster_all = []  # #intervals * #keywords
+        for i in tqdm(range(len(self.year))):
+            for j in tqdm(range(len(self.month[i]))):
+                emb_clusters, word_clusters = self.gen_emb_clusters(
+                    f"{self.model_path}/{self.year[i]}_{self.month[i][j]}.w2v",
+                    topn=self.tsne_topn,
+                )
+                emb_2d = self.tsne_2d(emb_clusters)
+                emb_2d_all.append(emb_2d)
+                word_cluster_all.append(word_clusters)
 
+        labels = self._gen_labels()
+        for i, keyword in enumerate(keys):
+            emb_2d_key = [
+                emb_2d_all[j][i, :, :] for j in range(len(emb_2d_all))
+            ]  # #intervals * emb_dim
+            word_cluster_key = [word_cluster_all[j][i] for j in range(len(word_cluster_all))]
+            word_cluster_new, emb_2d_new = self.create_diachronic_emb_2d(
+                emb_2d_key, word_cluster_key, topn=self.plot_topn
+            )
+            self.tsne_plot_diachronic(emb_2d_new, word_cluster_new, labels, keyword)
 
-def tsne_2d(embedding_clusters):
-    n, m, k = embedding_clusters.shape
-    tsne_model_en_2d = TSNE(
-        perplexity=10,
-        n_components=2,
-        init="random",
-        n_iter=5000,
-        learning_rate=150,
-        random_state=32,
-        n_jobs=-1,
-    )
-    embeddings_en_2d = np.array(
-        tsne_model_en_2d.fit_transform(embedding_clusters.reshape(n * m, k))
-    ).reshape(n, m, 2)
-    return embeddings_en_2d
-
-
-def gen_labels(args):
-    labels = []
-    for i in range(len(args.year)):
-        for j in range(len(args.month[i])):
-            labels.append(f"{args.year[i]}/{args.month[i][j]}")
-    return labels
-
-
-def create_diachronic_emb_2d(emb_2d_all, word_clusters_all, topn=10):
-    word_cluster_new = [[] for _ in range(len(emb_2d_all))]
-    emb_2d_new = np.zeros((len(emb_2d_all), topn + 1, 2))
-    for i in range(len(emb_2d_all)):  # only consider the first keyword now
-        keyword = word_clusters_all[i][0]
-        labels.append(f"{keyword}{i}")
-        kv = KeyedVectors(vector_size=2)
-        kv.add_vectors(word_clusters_all[i], emb_2d_all[i])
-        word_cluster_new[i].append(keyword)
-        emb_2d_new[i, 0, :] = kv.get_vector(keyword, norm=True)
-        j = 1
-        for w, _ in kv.most_similar(keyword, topn=topn):
-            word_cluster_new[i].append(w)
-            emb_2d_new[i, j, :] = kv.get_vector(w, norm=True)
-            j += 1
-    return word_cluster_new, emb_2d_new
-
-
-def tsne_plot_diachronic(args, emb_2d_clusters, word_clusters, labels, keyword, a=0.8):
-    figsize = (
-        (9.5, 6) if (matplotlib.get_backend() == "nbAgg") else (20, 12)
-    )  # interactive plot should be smaller
-    plt.figure(figsize=(figsize))
-    colors = cm.gist_rainbow(np.linspace(0, 1, len(labels)))
-    ts = []
-    emb_all = np.concatenate(emb_2d_clusters, axis=0)
-    label_ts = []
-    label_loc = []
-    for label, embeddings, words, color in zip(labels, emb_2d_clusters, word_clusters, colors):
-        x = embeddings[:, 0]
-        y = embeddings[:, 1]
-        plt.scatter(x, y, c=[color], alpha=a, label=label, s=20)
-        for i in range(len(words)):
-            ts.append(plt.text(x[i], y[i], words[i], fontsize=13))
-        label_ts.append(plt.text(np.mean(x), np.mean(y), label, fontsize=35, color="royalblue", fontweight="bold", alpha=0.25))
-        label_loc.append([np.mean(x), np.mean(y)])
-    
-    adjust_text(
-        ts, x=emb_all[:, 0], y=emb_all[:, 1], arrowprops=dict(arrowstyle="-", color="k", lw=0.5)
-    )
-    label_loc = np.array(label_loc)
-    adjust_text(
-        label_ts, x=label_loc[:, 0], y=label_loc[:, 1])
-
-    # draw arrows between consecutive time intervals
-    for i in range(len(emb_2d_clusters) - 1):
-        plt.arrow(
-            x=emb_2d_clusters[i, 0, 0],
-            y=emb_2d_clusters[i, 0, 1],
-            dx=emb_2d_clusters[i + 1, 0, 0] - emb_2d_clusters[i, 0, 0],
-            dy=emb_2d_clusters[i + 1, 0, 1] - emb_2d_clusters[i, 0, 1],
-            color="k",
-            width=0.002,
-            head_width=0.03,
-            head_length=0.06,
-            length_includes_head=True,
-            alpha=0.3,
+    def gen_emb_clusters(self, model_path, topn=30):
+        model_gn = KeyedVectors.load_word2vec_format(
+            model_path,
+            binary=False,
         )
 
-    # plt.legend()
-    plt.title(f"Semantic Change - {keyword.capitalize()}", fontsize=25, fontweight="bold")
-    plt.grid(True)
-    plt.savefig(f"{args.output_dir}/{keyword}.png")
+        embedding_clusters = []
+        word_clusters = []
+        for word in self.keys:
+            embeddings = []
+            words = []
+            words.append(word)
+            embeddings.append(model_gn.get_vector(word, norm=True))
+            for similar_word, _ in model_gn.most_similar(word, topn=topn):
+                words.append(similar_word)
+                embeddings.append(model_gn.get_vector(similar_word, norm=True))
+            embedding_clusters.append(embeddings)
+            word_clusters.append(words)
+        return np.array(embedding_clusters), word_clusters
+
+    def tsne_2d(self, embedding_clusters):
+        n, m, k = embedding_clusters.shape
+        tsne_model_en_2d = TSNE(
+            perplexity=10,
+            n_components=2,
+            init="random",
+            n_iter=5000,
+            learning_rate=150,
+            random_state=32,
+            n_jobs=-1,
+        )
+        embeddings_en_2d = np.array(
+            tsne_model_en_2d.fit_transform(embedding_clusters.reshape(n * m, k))
+        ).reshape(n, m, 2)
+        return embeddings_en_2d
+
+    def _gen_labels(self):
+        labels = []
+        for i in range(len(self.year)):
+            for j in range(len(self.month[i])):
+                labels.append(f"{self.year[i]}/{self.month[i][j]}")
+        return labels
+
+    def create_diachronic_emb_2d(self, emb_2d_all, word_clusters_all, topn=10):
+        word_cluster_new = [[] for _ in range(len(emb_2d_all))]
+        emb_2d_new = np.zeros((len(emb_2d_all), topn + 1, 2))
+        for i in range(len(emb_2d_all)):  # only consider the first keyword now
+            keyword = word_clusters_all[i][0]
+            kv = KeyedVectors(vector_size=2)
+            kv.add_vectors(word_clusters_all[i], emb_2d_all[i])
+            word_cluster_new[i].append(keyword)
+            emb_2d_new[i, 0, :] = kv.get_vector(keyword, norm=True)
+            j = 1
+            for w, _ in kv.most_similar(keyword, topn=topn):
+                word_cluster_new[i].append(w)
+                emb_2d_new[i, j, :] = kv.get_vector(w, norm=True)
+                j += 1
+        return word_cluster_new, emb_2d_new
+
+    def tsne_plot_diachronic(self, emb_2d_clusters, word_clusters, labels, keyword, a=0.8):
+        figsize = (
+            (9.5, 6) if (matplotlib.get_backend() == "nbAgg") else (20, 12)
+        )  # interactive plot should be smaller
+        plt.figure(figsize=(figsize))
+        colors = cm.gist_rainbow(np.linspace(0, 1, len(labels)))
+        ts = []
+        emb_all = np.concatenate(emb_2d_clusters, axis=0)
+        label_ts = []
+        label_loc = []
+        for label, embeddings, words, color in zip(labels, emb_2d_clusters, word_clusters, colors):
+            x = embeddings[:, 0]
+            y = embeddings[:, 1]
+            plt.scatter(x, y, c=[color], alpha=a, label=label, s=20)
+            for i in range(len(words)):
+                ts.append(plt.text(x[i], y[i], words[i], fontsize=13))
+            label_ts.append(
+                plt.text(
+                    np.mean(x),
+                    np.mean(y),
+                    label,
+                    fontsize=35,
+                    color="royalblue",
+                    fontweight="bold",
+                    alpha=0.25,
+                )
+            )
+            label_loc.append([np.mean(x), np.mean(y)])
+
+        adjust_text(
+            ts, x=emb_all[:, 0], y=emb_all[:, 1], arrowprops=dict(arrowstyle="-", color="k", lw=0.5)
+        )
+        label_loc = np.array(label_loc)
+        adjust_text(label_ts, x=label_loc[:, 0], y=label_loc[:, 1])
+
+        # draw arrows between consecutive time intervals
+        for i in range(len(emb_2d_clusters) - 1):
+            plt.arrow(
+                x=emb_2d_clusters[i, 0, 0],
+                y=emb_2d_clusters[i, 0, 1],
+                dx=emb_2d_clusters[i + 1, 0, 0] - emb_2d_clusters[i, 0, 0],
+                dy=emb_2d_clusters[i + 1, 0, 1] - emb_2d_clusters[i, 0, 1],
+                color="k",
+                width=0.002,
+                head_width=0.03,
+                head_length=0.06,
+                length_includes_head=True,
+                alpha=0.3,
+            )
+
+        plt.title(f"Semantic Change - {keyword.capitalize()}", fontsize=25, fontweight="bold")
+        plt.grid(True)
+        plt.savefig(f"{self.output_dir}/{keyword}.png")
+
+
+def make_tsne_plotter(args, keys):
+    plotter = TsnePlotter(
+        model_path=args.model_path,
+        output_dir=args.output_dir,
+        keys=keys,
+        year=args.year,
+        month=args.month,
+        plot_topn=args.plot_topn,
+        tsne_topn=args.tsne_topn,
+    )
+    return plotter
 
 
 if __name__ == "__main__":
@@ -164,27 +214,8 @@ if __name__ == "__main__":
         reader = csv.reader(f)
         for row in reader:
             keys.append(row[0])
+    keys_str = " ".join(keys)
+    print(f"keyword set: {keys_str}")
 
-    emb_2d_all = []  # #intervals * #keywords * emb dim
-    word_cluster_all = []  # #intervals * #keywords
-    for i in tqdm(range(len(args.year))):
-        for j in tqdm(range(len(args.month[i]))):
-            emb_clusters, word_clusters = gen_emb_clusters(
-                f"{args.model_path}/{args.year[i]}_{args.month[i][j]}.w2v",
-                keys,
-                topn=args.tsne_topn,
-            )
-            emb_2d = tsne_2d(emb_clusters)
-            emb_2d_all.append(emb_2d)
-            word_cluster_all.append(word_clusters)
-
-    labels = gen_labels(args)
-    for i, keyword in enumerate(keys):
-        emb_2d_key = [
-            emb_2d_all[j][i, :, :] for j in range(len(emb_2d_all))
-        ]  # #intervals * emb_dim
-        word_cluster_key = [word_cluster_all[j][i] for j in range(len(word_cluster_all))]
-        word_cluster_new, emb_2d_new = create_diachronic_emb_2d(
-            emb_2d_key, word_cluster_key, topn=args.plot_topn
-        )
-        tsne_plot_diachronic(args, emb_2d_new, word_cluster_new, labels, keyword)
+    tsne_plotter = make_tsne_plotter(args, keys)
+    tsne_plotter.create_tsne_plot()
