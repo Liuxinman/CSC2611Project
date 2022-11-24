@@ -234,7 +234,7 @@ class TimeSeriesPlotter:
         for i in range(len(year)):
             for j in range(len(month[i])):
                 idx = w2v_month[w2v_year.index(year[i])].index(month[i][j])
-                idxs.append(idx + sum(month_len[:w2v_year.index(year[i])]))
+                idxs.append(idx + sum(month_len[: w2v_year.index(year[i])]))
         self.w2v = w2v_all[:, idxs, :]
 
         _, self.num_intervals = self.wf.shape
@@ -254,22 +254,21 @@ class TimeSeriesPlotter:
             tf_idf_ts.append(tf_idf_j - tf_idf_i)
         self.wf_ts = np.array(wf_ts).T
         self.tf_idf_ts = np.array(tf_idf_ts).T
-    
+
     def make_w2v_ts(self, batch_size=10000):
         # use batch training (faster and doable)
         self.w2v_ts = np.zeros((self.w2v.shape[0], self.w2v.shape[1] - 1))
         start = 0
-        for b in tqdm(range(1, math.ceil(self.w2v.shape[0]/batch_size) + 1)):
+        for b in tqdm(range(1, math.ceil(self.w2v.shape[0] / batch_size) + 1)):
             end = min(b * batch_size, self.w2v.shape[0])
             for i, j in zip(range(self.num_intervals - 1), range(1, self.num_intervals)):
                 w2v_i, w2v_j = self.w2v[start:end, i, :], self.w2v[start:end, j, :]
                 self.w2v_ts[start:end, i] = np.diagonal(1 - cosine_similarity(w2v_i, w2v_j))
             start = end
 
-    
     def make_ts_plot(self):
         pass
-        
+
 
 if __name__ == "__main__":
     args = get_args()
@@ -282,21 +281,21 @@ if __name__ == "__main__":
     keys_str = " ".join(keys)
     print(f"keyword set: {keys_str}")
 
-    # tsne_plotter = TsnePlotter(
-    #     model_path=args.model_path,
-    #     output_dir=args.output_dir,
-    #     keys=keys,
-    #     year=args.year,
-    #     month=args.month,
-    #     plot_topn=args.plot_topn,
-    #     tsne_topn=args.tsne_topn,
-    # )
-    # tsne_plotter.create_tsne_plot()
+    tsne_plotter = TsnePlotter(
+        model_path=args.model_path,
+        output_dir=args.output_dir,
+        keys=keys,
+        year=args.year,
+        month=args.month,
+        plot_topn=args.plot_topn,
+        tsne_topn=args.tsne_topn,
+    )
+    tsne_plotter.create_tsne_plot()
 
     time_series_plotter = TimeSeriesPlotter(
-        tf_fpath=args.tf_fpath, 
-        merged_emb_fpath=args.merged_emb_fpath, 
-        keys=keys, 
-        year=args.ts_year, 
+        tf_fpath=args.tf_fpath,
+        merged_emb_fpath=args.merged_emb_fpath,
+        keys=keys,
+        year=args.ts_year,
         month=args.ts_month,
     )
