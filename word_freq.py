@@ -44,7 +44,7 @@ def gen_vocab(data_dir, year, month, min_freq=5):
         return vocab
 
     corpus = []
-    preprocessor = Preprocessor(remove_stopwords=True)
+    preprocessor = Preprocessor(remove_stopwords=True, stem=False)
     for i in tqdm(range(len(year))):
         for j in tqdm(range(len(month[i]))):
             corpus_m = preprocessor.preprocess(

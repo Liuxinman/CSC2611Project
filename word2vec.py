@@ -67,7 +67,7 @@ def preprocess(args, year, month):
         if not args.rewrite_saved_corpus:
             return
 
-    preprocessor = Preprocessor(remove_stopwords=False)
+    preprocessor = Preprocessor(remove_stopwords=False, stem=False)
     corpus = preprocessor.preprocess(
         data_path=f"{args.data_dir}/{year}_merged/{month}_merged.csv"
     )  # list of sentences
@@ -201,7 +201,6 @@ def evaluation(args, eval_type="sim"):
             print(
                 f"Pearson correlation between s and s_word2vec - {args.year[i]}/{args.month[i][j]}: {pearsonr(sim_copy, s_word2vec)}"
             )
-            # print(missing)
 
 
 if __name__ == "__main__":
