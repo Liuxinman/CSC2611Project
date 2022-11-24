@@ -1,7 +1,10 @@
 import csv
+import pickle
+import math
 import argparse
 import numpy as np
 from tqdm import tqdm
+import pandas as pd
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -10,6 +13,7 @@ import matplotlib.cm as cm
 from sklearn.manifold import TSNE
 from adjustText import adjust_text
 from gensim.models import KeyedVectors
+from sklearn.metrics.pairwise import cosine_similarity
 
 from utils import _print_args
 
@@ -29,13 +33,21 @@ def get_args(print_args=True):
 
     parser.add_argument("--keyword_fpath", type=str, required=True)
     parser.add_argument("--model_path", type=str, required=True)
+    parser.add_argument("--tf_fpath", type=str, required=True)
+    parser.add_argument("--merged_emb_fpath", type=str, required=True)
     parser.add_argument("--output_dir", type=str, required=True)
     parser.add_argument(
         "--year",
         type=int_list,
         required=True,
     )
+    parser.add_argument(
+        "--ts_year",
+        type=int_list,
+        required=True,
+    )
     parser.add_argument("--month", type=int_list_2d, required=True)
+    parser.add_argument("--ts_month", type=int_list_2d, required=True)
     parser.add_argument("--plot_topn", type=int, default=2)
     parser.add_argument("--tsne_topn", type=int, default=30)
     args = parser.parse_args()
@@ -193,18 +205,71 @@ class TsnePlotter:
         plt.savefig(f"{self.output_dir}/{keyword}.png")
 
 
-def make_tsne_plotter(args, keys):
-    plotter = TsnePlotter(
-        model_path=args.model_path,
-        output_dir=args.output_dir,
-        keys=keys,
-        year=args.year,
-        month=args.month,
-        plot_topn=args.plot_topn,
-        tsne_topn=args.tsne_topn,
-    )
-    return plotter
+class TimeSeriesPlotter:
+    def __init__(self, tf_fpath, merged_emb_fpath, keys, year, month, batch_size=10000):
+        self.keys = keys
 
+        df = pd.read_csv(tf_fpath)
+
+        self.tf_idf_vocab = df["vocab"].to_list()
+        wf = []
+        tf_idf = []
+        for i in range(len(year)):
+            for j in range(len(month[i])):
+                wf.append(df[f"tf_{year[i]}_{month[i][j]}"].to_list())
+                tf_idf.append(df[f"tf_idf_{year[i]}_{month[i][j]}"].to_list())
+        self.wf = np.array(wf).T
+        self.tf_idf = np.array(tf_idf).T
+
+        # retrieve word2vec embedding
+        t = 0
+        for i in range(len(year)):
+            t += len(month[i])
+
+        with open(merged_emb_fpath, "rb") as f:
+            w2v_year, w2v_month, self.w2v_vocab, w2v_all = pickle.load(f)
+
+        idxs = []
+        month_len = [len(m) for m in w2v_month]
+        for i in range(len(year)):
+            for j in range(len(month[i])):
+                idx = w2v_month[w2v_year.index(year[i])].index(month[i][j])
+                idxs.append(idx + sum(month_len[:w2v_year.index(year[i])]))
+        self.w2v = w2v_all[:, idxs, :]
+
+        _, self.num_intervals = self.wf.shape
+
+        self.make_tf_idf_ts()
+        print("wf and tf_idf time series is done!")
+        self.make_w2v_ts(batch_size=batch_size)
+        print("w2v time series is done!")
+
+    def make_tf_idf_ts(self):
+        wf_ts = []
+        tf_idf_ts = []
+        for i, j in zip(range(self.num_intervals - 1), range(1, self.num_intervals)):
+            wf_i, wf_j = self.wf[:, i], self.wf[:, j]
+            tf_idf_i, tf_idf_j = self.tf_idf[:, i], self.tf_idf[:, j]
+            wf_ts.append(wf_j - wf_i)
+            tf_idf_ts.append(tf_idf_j - tf_idf_i)
+        self.wf_ts = np.array(wf_ts).T
+        self.tf_idf_ts = np.array(tf_idf_ts).T
+    
+    def make_w2v_ts(self, batch_size=10000):
+        # use batch training (faster and doable)
+        self.w2v_ts = np.zeros((self.w2v.shape[0], self.w2v.shape[1] - 1))
+        start = 0
+        for b in tqdm(range(1, math.ceil(self.w2v.shape[0]/batch_size) + 1)):
+            end = min(b * batch_size, self.w2v.shape[0])
+            for i, j in zip(range(self.num_intervals - 1), range(1, self.num_intervals)):
+                w2v_i, w2v_j = self.w2v[start:end, i, :], self.w2v[start:end, j, :]
+                self.w2v_ts[start:end, i] = np.diagonal(1 - cosine_similarity(w2v_i, w2v_j))
+            start = end
+
+    
+    def make_ts_plot(self):
+        pass
+        
 
 if __name__ == "__main__":
     args = get_args()
@@ -217,5 +282,21 @@ if __name__ == "__main__":
     keys_str = " ".join(keys)
     print(f"keyword set: {keys_str}")
 
-    tsne_plotter = make_tsne_plotter(args, keys)
-    tsne_plotter.create_tsne_plot()
+    # tsne_plotter = TsnePlotter(
+    #     model_path=args.model_path,
+    #     output_dir=args.output_dir,
+    #     keys=keys,
+    #     year=args.year,
+    #     month=args.month,
+    #     plot_topn=args.plot_topn,
+    #     tsne_topn=args.tsne_topn,
+    # )
+    # tsne_plotter.create_tsne_plot()
+
+    time_series_plotter = TimeSeriesPlotter(
+        tf_fpath=args.tf_fpath, 
+        merged_emb_fpath=args.merged_emb_fpath, 
+        keys=keys, 
+        year=args.ts_year, 
+        month=args.ts_month,
+    )
