@@ -9,6 +9,7 @@ import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+import matplotlib.lines as mlines
 
 from sklearn.manifold import TSNE
 from adjustText import adjust_text
@@ -206,8 +207,10 @@ class TsnePlotter:
 
 
 class TimeSeriesPlotter:
-    def __init__(self, tf_fpath, merged_emb_fpath, keys, year, month, batch_size=10000):
+    def __init__(self, tf_fpath, merged_emb_fpath, output_dir, keys, year, month, batch_size=10000):
         self.keys = keys
+        self.output_dir = output_dir
+        self.month = month
 
         df = pd.read_csv(tf_fpath)
 
@@ -254,6 +257,8 @@ class TimeSeriesPlotter:
             tf_idf_ts.append(tf_idf_j - tf_idf_i)
         self.wf_ts = np.array(wf_ts).T
         self.tf_idf_ts = np.array(tf_idf_ts).T
+        self.wf_dct = dict(zip(self.tf_idf_vocab, self.wf_ts))
+        self.tf_idf_dct = dict(zip(self.tf_idf_vocab, self.tf_idf_ts))
 
     def make_w2v_ts(self, batch_size=10000):
         # use batch training (faster and doable)
@@ -265,9 +270,39 @@ class TimeSeriesPlotter:
                 w2v_i, w2v_j = self.w2v[start:end, i, :], self.w2v[start:end, j, :]
                 self.w2v_ts[start:end, i] = np.diagonal(1 - cosine_similarity(w2v_i, w2v_j))
             start = end
+        self.w2v_dct = dict(zip(self.w2v_vocab, self.w2v_ts))
 
-    def make_ts_plot(self):
-        pass
+    def make_tf_idf_vs_w2v_plot(self, key):
+        num_time_interval = self.wf_ts.shape[1]
+        x_labels = []
+        for m in self.month:
+            x_labels += m
+        x_labels = x_labels[1:]
+
+        fig, ax = plt.subplots()
+        ax.plot(
+            range(1, num_time_interval + 1), self.tf_idf_dct[key], color="darkorange", marker="^"
+        )
+        ax.set_xlabel("Month", fontsize=14)
+        ax.set_xticks(range(1, num_time_interval + 1), x_labels)
+        ax.set_ylabel("Delta TF", color="black", fontsize=12, fontweight="bold")
+        legend1 = mlines.Line2D(
+            [], [], color="darkorange", marker="^", markersize=10, label="Delta TF"
+        )
+
+        ax2 = ax.twinx()
+        ax2.plot(
+            range(1, num_time_interval + 1), self.w2v_dct[key], color="darkgreen", marker="p"
+        )
+        ax2.set_ylabel("Delta W2V", color="black", fontsize=12, fontweight="bold")
+        legend2 = mlines.Line2D(
+            [], [], color="darkgreen", marker="p", markersize=10, label="Delta W2V"
+        )
+        ax.legend(handles=[legend1, legend2])
+        ax.set_title("")
+        plt.show()
+
+        fig.savefig(f"{self.output_dir}/tfidf_vs_w2v_{key}.png", bbox_inches="tight")
 
 
 if __name__ == "__main__":
@@ -295,7 +330,9 @@ if __name__ == "__main__":
     time_series_plotter = TimeSeriesPlotter(
         tf_fpath=args.tf_fpath,
         merged_emb_fpath=args.merged_emb_fpath,
+        output_dir=args.output_dir,
         keys=keys,
         year=args.ts_year,
         month=args.ts_month,
     )
+    time_series_plotter.make_tf_idf_vs_w2v_plot(key="virtual")
