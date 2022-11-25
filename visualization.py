@@ -207,10 +207,12 @@ class TsnePlotter:
 
 
 class TimeSeriesPlotter:
-    def __init__(self, tf_fpath, merged_emb_fpath, output_dir, keys, year, month, batch_size=10000):
+    def __init__(self, tf_fpath, merged_emb_fpath, model_path, output_dir, keys, year, month, batch_size=10000):
         self.keys = keys
         self.output_dir = output_dir
         self.month = month
+        self.year = year
+        self.model_path = model_path
 
         df = pd.read_csv(tf_fpath)
 
@@ -242,6 +244,7 @@ class TimeSeriesPlotter:
 
         _, self.num_intervals = self.wf.shape
 
+        self.ts = {}
         self.make_tf_idf_ts()
         print("wf and tf_idf time series is done!")
         self.make_w2v_ts(batch_size=batch_size)
@@ -255,25 +258,24 @@ class TimeSeriesPlotter:
             tf_idf_i, tf_idf_j = self.tf_idf[:, i], self.tf_idf[:, j]
             wf_ts.append(wf_j - wf_i)
             tf_idf_ts.append(tf_idf_j - tf_idf_i)
-        self.wf_ts = np.array(wf_ts).T
-        self.tf_idf_ts = np.array(tf_idf_ts).T
-        self.wf_dct = dict(zip(self.tf_idf_vocab, self.wf_ts))
-        self.tf_idf_dct = dict(zip(self.tf_idf_vocab, self.tf_idf_ts))
+        wf_ts = np.array(wf_ts).T
+        tf_idf_ts = np.array(tf_idf_ts).T
+        self.ts["wf"] = dict(zip(self.tf_idf_vocab, wf_ts))
+        self.ts["tf_idf"] = dict(zip(self.tf_idf_vocab, tf_idf_ts))
 
     def make_w2v_ts(self, batch_size=10000):
         # use batch training (faster and doable)
-        self.w2v_ts = np.zeros((self.w2v.shape[0], self.w2v.shape[1] - 1))
+        w2v_ts = np.zeros((self.w2v.shape[0], self.w2v.shape[1] - 1))
         start = 0
         for b in tqdm(range(1, math.ceil(self.w2v.shape[0] / batch_size) + 1)):
             end = min(b * batch_size, self.w2v.shape[0])
             for i, j in zip(range(self.num_intervals - 1), range(1, self.num_intervals)):
                 w2v_i, w2v_j = self.w2v[start:end, i, :], self.w2v[start:end, j, :]
-                self.w2v_ts[start:end, i] = np.diagonal(1 - cosine_similarity(w2v_i, w2v_j))
+                w2v_ts[start:end, i] = np.diagonal(1 - cosine_similarity(w2v_i, w2v_j))
             start = end
-        self.w2v_dct = dict(zip(self.w2v_vocab, self.w2v_ts))
+        self.ts["w2v"] = dict(zip(self.w2v_vocab, w2v_ts))
 
-    def make_tf_idf_vs_w2v_plot(self, key):
-        num_time_interval = self.wf_ts.shape[1]
+    def make_tf_idf_vs_w2v_plot(self, key, ts1="tf_idf", ts2="w2v"):
         x_labels = []
         for m in self.month:
             x_labels += m
@@ -281,10 +283,10 @@ class TimeSeriesPlotter:
 
         fig, ax = plt.subplots()
         ax.plot(
-            range(1, num_time_interval + 1), self.tf_idf_dct[key], color="darkorange", marker="^"
+            range(1, self.num_intervals), self.ts[ts1][key], color="darkorange", marker="^"
         )
         ax.set_xlabel("Month", fontsize=14)
-        ax.set_xticks(range(1, num_time_interval + 1), x_labels)
+        ax.set_xticks(range(1, self.num_intervals), x_labels)
         ax.set_ylabel("Delta TF", color="black", fontsize=12, fontweight="bold")
         legend1 = mlines.Line2D(
             [], [], color="darkorange", marker="^", markersize=10, label="Delta TF"
@@ -292,7 +294,7 @@ class TimeSeriesPlotter:
 
         ax2 = ax.twinx()
         ax2.plot(
-            range(1, num_time_interval + 1), self.w2v_dct[key], color="darkgreen", marker="p"
+            range(1, self.num_intervals), self.ts[ts2][key], color="darkgreen", marker="p"
         )
         ax2.set_ylabel("Delta W2V", color="black", fontsize=12, fontweight="bold")
         legend2 = mlines.Line2D(
@@ -303,6 +305,20 @@ class TimeSeriesPlotter:
         plt.show()
 
         fig.savefig(f"{self.output_dir}/tfidf_vs_w2v_{key}.png", bbox_inches="tight")
+    
+    def make_semantic_change_plot(self, key, topn=3):
+        # def _calc_cosine_dist():
+        #     model1 = KeyedVectors.load_word2vec_format(
+        #         f"{self.model_path}/{self.year[0]}_{self.month[0][0]}.w2v",
+        #         binary=False,
+        #     )
+        # model2 = KeyedVectors.load_word2vec_format(
+        #     f"{self.model_path}/{self.year[-1]}_{self.month[-1][-1]}.w2v",
+        #     binary=False,
+        # )
+        # sim1 = model1.most_similar(key, topn=topn)
+        # sim2 = model2.most_similar(key, topn=topn)
+        pass
 
 
 if __name__ == "__main__":
@@ -330,6 +346,7 @@ if __name__ == "__main__":
     time_series_plotter = TimeSeriesPlotter(
         tf_fpath=args.tf_fpath,
         merged_emb_fpath=args.merged_emb_fpath,
+        model_path=args.model_path,
         output_dir=args.output_dir,
         keys=keys,
         year=args.ts_year,
