@@ -207,7 +207,17 @@ class TsnePlotter:
 
 
 class TimeSeriesPlotter:
-    def __init__(self, tf_fpath, merged_emb_fpath, model_path, output_dir, keys, year, month, batch_size=10000):
+    def __init__(
+        self,
+        tf_fpath,
+        merged_emb_fpath,
+        model_path,
+        output_dir,
+        keys,
+        year,
+        month,
+        batch_size=10000,
+    ):
         self.keys = keys
         self.output_dir = output_dir
         self.month = month
@@ -245,9 +255,9 @@ class TimeSeriesPlotter:
         _, self.num_intervals = self.wf.shape
 
         self.ts = {}
-        self.make_tf_idf_ts()
+        # self.make_tf_idf_ts()
         print("wf and tf_idf time series is done!")
-        self.make_w2v_ts(batch_size=batch_size)
+        # self.make_w2v_ts(batch_size=batch_size)
         print("w2v time series is done!")
 
     def make_tf_idf_ts(self):
@@ -282,9 +292,7 @@ class TimeSeriesPlotter:
         x_labels = x_labels[1:]
 
         fig, ax = plt.subplots()
-        ax.plot(
-            range(1, self.num_intervals), self.ts[ts1][key], color="darkorange", marker="^"
-        )
+        ax.plot(range(1, self.num_intervals), self.ts[ts1][key], color="darkorange", marker="^")
         ax.set_xlabel("Month", fontsize=14)
         ax.set_xticks(range(1, self.num_intervals), x_labels)
         ax.set_ylabel("Delta TF", color="black", fontsize=12, fontweight="bold")
@@ -293,9 +301,7 @@ class TimeSeriesPlotter:
         )
 
         ax2 = ax.twinx()
-        ax2.plot(
-            range(1, self.num_intervals), self.ts[ts2][key], color="darkgreen", marker="p"
-        )
+        ax2.plot(range(1, self.num_intervals), self.ts[ts2][key], color="darkgreen", marker="p")
         ax2.set_ylabel("Delta W2V", color="black", fontsize=12, fontweight="bold")
         legend2 = mlines.Line2D(
             [], [], color="darkgreen", marker="p", markersize=10, label="Delta W2V"
@@ -304,21 +310,64 @@ class TimeSeriesPlotter:
         ax.set_title("")
         plt.show()
 
-        fig.savefig(f"{self.output_dir}/tfidf_vs_w2v_{key}.png", bbox_inches="tight")
-    
-    def make_semantic_change_plot(self, key, topn=3):
-        # def _calc_cosine_dist():
-        #     model1 = KeyedVectors.load_word2vec_format(
-        #         f"{self.model_path}/{self.year[0]}_{self.month[0][0]}.w2v",
-        #         binary=False,
-        #     )
-        # model2 = KeyedVectors.load_word2vec_format(
-        #     f"{self.model_path}/{self.year[-1]}_{self.month[-1][-1]}.w2v",
-        #     binary=False,
-        # )
-        # sim1 = model1.most_similar(key, topn=topn)
-        # sim2 = model2.most_similar(key, topn=topn)
-        pass
+        fig.savefig(f"{self.output_dir}/tfidf_vs_w2v_{key}.png", bbox_inches="tight", dpi=300)
+
+    def make_semantic_change_plot(self, key):
+        def _find_most_sim_words(y, m):
+            # find the most similar words
+            model = KeyedVectors.load_word2vec_format(
+                f"{self.model_path}/{y}_{m}.w2v",
+                binary=False,
+            )
+            sims = [w for w, _ in model.most_similar(key, topn=3)]
+            return sims
+
+        sims = _find_most_sim_words(self.year[0], self.month[0][0]) + _find_most_sim_words(
+            self.year[-1], self.month[-1][-1]
+        )
+
+        def _calc_cos_dist(emb1, emb2):
+            emb1 = np.expand_dims(emb1, axis=0)
+            emb2 = np.expand_dims(emb2, axis=0)
+            return 1 - cosine_similarity(emb1, emb2)[0][0]
+
+        cos_dist = np.zeros((len(sims), self.num_intervals))
+        t = 0
+        for i in range(len(self.year)):
+            for j in range(len(self.month[i])):
+                model = KeyedVectors.load_word2vec_format(
+                    f"{self.model_path}/{self.year[i]}_{self.month[i][j]}.w2v",
+                    binary=False,
+                )
+                emb_key = model[key]
+                for w in range(len(sims)):
+                    if sims[w] in model.key_to_index:
+                        emb_w = model[sims[w]]
+                        cos_dist[w, t] = _calc_cos_dist(emb_w, emb_key)
+                    else:
+                        cos_dist[w, t] = 1.0
+                t += 1
+        color = ["navy", "blue", "cornflowerblue", "orangered", "darkorange", "gold"]
+        marker = ["p", ".", "o", "^", "x", "D"]
+        for w in range(len(sims)):
+            plt.plot(
+                range(1, self.num_intervals + 1),
+                cos_dist[w, :],
+                color=color[w],
+                marker=marker[w],
+                label=sims[w],
+            )
+        plt.legend(bbox_to_anchor=(0.5, 1.0), loc="upper center", borderaxespad=0.0, ncols=2)
+        x_labels = []
+        for m in self.month:
+            x_labels += m
+        plt.xticks(range(1, self.num_intervals + 1), x_labels)
+        plt.ylim((0.0, 1.5))
+        plt.xlabel("Month", fontweight="bold")
+        plt.ylabel("Cosine Distance", fontweight="bold")
+        plt.title(f"{key.capitalize()} Semantic Change", fontweight="bold", fontsize=14)
+        plt.savefig(f"{self.output_dir}/{key}_semantic_change.png", dpi=300)
+        plt.show()
 
 
 if __name__ == "__main__":
@@ -353,3 +402,4 @@ if __name__ == "__main__":
         month=args.ts_month,
     )
     time_series_plotter.make_tf_idf_vs_w2v_plot(key="virtual")
+    time_series_plotter.make_semantic_change_plot(key="quarantine")
