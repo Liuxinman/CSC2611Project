@@ -147,8 +147,7 @@ python visualization.py \
 | semantic_change_keyword | str_list | Keywords for semantic change plot |
 | tsne_keyword            | str_list | Keywords for tsne plot            |
 
-## Sample Output
-
+Sample output is saved in the **output/plots**.
 
 ## Reference
 
