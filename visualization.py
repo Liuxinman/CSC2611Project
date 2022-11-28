@@ -29,6 +29,9 @@ def get_args(print_args=True):
         # 10,11,12;1,2,3,4,5
         # [[10, 11, 12], [1, 2, 3, 4, 5]]
         return [list(map(int, r.split(","))) for r in x.split(";")]
+    
+    def str_list(x):
+        return x.split(",")
 
     parser = argparse.ArgumentParser()
 
@@ -51,6 +54,9 @@ def get_args(print_args=True):
     parser.add_argument("--ts_month", type=int_list_2d, required=True)
     parser.add_argument("--plot_topn", type=int, default=2)
     parser.add_argument("--tsne_topn", type=int, default=30)
+    parser.add_argument("--vs_keyword", type=str_list, default="")
+    parser.add_argument("--semantic_change_keyword", type=str_list, default="")
+    parser.add_argument("--tsne_keyword", type=str_list, default="")
     args = parser.parse_args()
 
     if print_args:
@@ -82,7 +88,7 @@ class TsnePlotter:
                 word_cluster_all.append(word_clusters)
 
         labels = self._gen_labels()
-        for i, keyword in enumerate(keys):
+        for i, keyword in enumerate(self.keys):
             emb_2d_key = [
                 emb_2d_all[j][i, :, :] for j in range(len(emb_2d_all))
             ]  # #intervals * emb_dim
@@ -213,12 +219,10 @@ class TimeSeriesPlotter:
         merged_emb_fpath,
         model_path,
         output_dir,
-        keys,
         year,
         month,
         batch_size=10000,
     ):
-        self.keys = keys
         self.output_dir = output_dir
         self.month = month
         self.year = year
@@ -255,9 +259,9 @@ class TimeSeriesPlotter:
         _, self.num_intervals = self.wf.shape
 
         self.ts = {}
-        # self.make_tf_idf_ts()
+        self.make_tf_idf_ts()
         print("wf and tf_idf time series is done!")
-        # self.make_w2v_ts(batch_size=batch_size)
+        self.make_w2v_ts(batch_size=batch_size)
         print("w2v time series is done!")
 
     def make_tf_idf_ts(self):
@@ -373,18 +377,10 @@ class TimeSeriesPlotter:
 if __name__ == "__main__":
     args = get_args()
 
-    keys = []
-    with open(args.keyword_fpath, "r") as f:
-        reader = csv.reader(f)
-        for row in reader:
-            keys.append(row[0])
-    keys_str = " ".join(keys)
-    print(f"keyword set: {keys_str}")
-
     tsne_plotter = TsnePlotter(
         model_path=args.model_path,
         output_dir=args.output_dir,
-        keys=keys,
+        keys=args.tsne_keyword,
         year=args.year,
         month=args.month,
         plot_topn=args.plot_topn,
@@ -397,9 +393,10 @@ if __name__ == "__main__":
         merged_emb_fpath=args.merged_emb_fpath,
         model_path=args.model_path,
         output_dir=args.output_dir,
-        keys=keys,
         year=args.ts_year,
         month=args.ts_month,
     )
-    time_series_plotter.make_tf_idf_vs_w2v_plot(key="virtual")
-    time_series_plotter.make_semantic_change_plot(key="quarantine")
+    for key in args.vs_keyword:
+        time_series_plotter.make_tf_idf_vs_w2v_plot(key=key)
+    for key in args.semantic_change_keyword:
+        time_series_plotter.make_semantic_change_plot(key=key)
