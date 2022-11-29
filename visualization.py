@@ -15,6 +15,7 @@ from sklearn.manifold import TSNE
 from adjustText import adjust_text
 from gensim.models import KeyedVectors
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import normalize
 
 from utils import _print_args
 
@@ -29,7 +30,7 @@ def get_args(print_args=True):
         # 10,11,12;1,2,3,4,5
         # [[10, 11, 12], [1, 2, 3, 4, 5]]
         return [list(map(int, r.split(","))) for r in x.split(";")]
-    
+
     def str_list(x):
         return x.split(",")
 
@@ -54,9 +55,9 @@ def get_args(print_args=True):
     parser.add_argument("--ts_month", type=int_list_2d, required=True)
     parser.add_argument("--plot_topn", type=int, default=2)
     parser.add_argument("--tsne_topn", type=int, default=30)
-    parser.add_argument("--vs_keyword", type=str_list, default="")
-    parser.add_argument("--semantic_change_keyword", type=str_list, default="")
-    parser.add_argument("--tsne_keyword", type=str_list, default="")
+    parser.add_argument("--vs_keyword", type=str_list, default=[])
+    parser.add_argument("--semantic_change_keyword", type=str_list, default=[])
+    parser.add_argument("--tsne_keyword", type=str_list, default=[])
     args = parser.parse_args()
 
     if print_args:
@@ -75,6 +76,8 @@ class TsnePlotter:
         self.output_dir = output_dir
 
     def create_tsne_plot(self):
+        if len(self.keys) == 0:
+            return
         emb_2d_all = []  # #intervals * #keywords * emb dim
         word_cluster_all = []  # #intervals * #keywords
         for i in tqdm(range(len(self.year))):
@@ -264,6 +267,9 @@ class TimeSeriesPlotter:
         self.make_w2v_ts(batch_size=batch_size)
         print("w2v time series is done!")
 
+        self.calc_degree_of_change()
+        print("degree of semantic change is done!")
+
     def make_tf_idf_ts(self):
         wf_ts = []
         tf_idf_ts = []
@@ -312,7 +318,6 @@ class TimeSeriesPlotter:
         )
         ax.legend(handles=[legend1, legend2])
         ax.set_title("")
-        plt.show()
 
         fig.savefig(f"{self.output_dir}/tfidf_vs_w2v_{key}.png", bbox_inches="tight", dpi=300)
 
@@ -353,6 +358,7 @@ class TimeSeriesPlotter:
                 t += 1
         color = ["navy", "blue", "cornflowerblue", "orangered", "darkorange", "gold"]
         marker = ["p", ".", "o", "^", "x", "D"]
+        plt.figure("semantic change")
         for w in range(len(sims)):
             plt.plot(
                 range(1, self.num_intervals + 1),
@@ -371,7 +377,64 @@ class TimeSeriesPlotter:
         plt.ylabel("Cosine Distance", fontweight="bold")
         plt.title(f"{key.capitalize()} Semantic Change", fontweight="bold", fontsize=14)
         plt.savefig(f"{self.output_dir}/{key}_semantic_change.png", dpi=300)
-        plt.show()
+
+    def calc_degree_of_change(self, batch_size=10000):
+        valid_idx = []
+        vocab = []
+        word_removed = []
+        for i in range(len(self.w2v)):
+            zero_emb = False
+            for j in range(len(self.w2v[0])):
+                if sum(self.w2v[i][j]) == 0:
+                    zero_emb = True
+                    word_removed.append(self.w2v_vocab[i])
+                    break
+            if not zero_emb:
+                valid_idx.append(i)
+                vocab.append(self.w2v_vocab[i])
+        emb = np.array(self.w2v)[valid_idx]
+
+        emb_start = normalize(emb[:, 0, :])
+        emb_end = normalize(emb[:, -1, :])
+
+        degree = np.zeros((emb.shape[0]))
+        start = 0
+        for b in tqdm(range(1, math.ceil(emb.shape[0] / batch_size) + 1)):
+            end = min(b * batch_size, emb.shape[0])
+            emb_0, emb_1 = emb_start[start:end, :], emb_end[start:end, :]
+            degree[start:end] = np.diagonal(1 - cosine_similarity(emb_0, emb_1))
+            start = end
+        self.degree = sorted(list(zip(vocab, degree)), key=lambda x: x[1], reverse=True)
+
+    def get_most_least_changing_words(self, start=0, end=100):
+        print(f"************** The {start}-{end} most changing word **************")
+        for i in range(start, end):
+            print(self.degree[i])
+        print(f"************** The {start}-{end} least changing word **************")
+        for i in range(-start, -end - 1, -1):
+            print(self.degree[i])
+
+    def get_degree_rank(self, keys):
+        rank = [d[0] for d in self.degree]
+        print(f"Words in total: {len(rank)}")
+        for key in keys:
+            print(f"The degree of semantic change of {key} ranked {rank.index(key) + 1}")
+
+    def make_degree_histogram(self):
+        plt.figure("histogram")
+        plt.hist(
+            [d[1] for d in self.degree],
+            30,
+            density=True,
+            stacked=True,
+            facecolor="navy",
+            alpha=0.75,
+        )
+        plt.xlim([-0.05, 1.05])
+        plt.xlabel("Degree of Semantic Change")
+        plt.title("Histogram of Degree of Semantic Change")
+        plt.grid(True)
+        plt.savefig(f"{self.output_dir}/semantic_change_histogram.png", dpi=300)
 
 
 if __name__ == "__main__":
@@ -400,3 +463,7 @@ if __name__ == "__main__":
         time_series_plotter.make_tf_idf_vs_w2v_plot(key=key)
     for key in args.semantic_change_keyword:
         time_series_plotter.make_semantic_change_plot(key=key)
+
+    time_series_plotter.get_most_least_changing_words(start=400, end=500)
+    time_series_plotter.make_degree_histogram()
+    time_series_plotter.get_degree_rank(args.tsne_keyword)
