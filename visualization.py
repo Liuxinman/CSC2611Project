@@ -1,7 +1,7 @@
-import csv
 import pickle
 import math
 import argparse
+import random
 import numpy as np
 from tqdm import tqdm
 import pandas as pd
@@ -267,7 +267,7 @@ class TimeSeriesPlotter:
         self.make_w2v_ts(batch_size=batch_size)
         print("w2v time series is done!")
 
-        self.calc_degree_of_change()
+        self.calc_degree_of_change(batch_size=batch_size)
         print("degree of semantic change is done!")
 
     def make_tf_idf_ts(self):
@@ -406,13 +406,25 @@ class TimeSeriesPlotter:
             start = end
         self.degree = sorted(list(zip(vocab, degree)), key=lambda x: x[1], reverse=True)
 
-    def get_most_least_changing_words(self, start=0, end=100):
-        print(f"************** The {start}-{end} most changing word **************")
+    def get_most_changing_words(self, start=0, end=100, verbose=True):
+        words = []
+        if verbose:
+            print(f"************** The {start}-{end} most changing word **************")
         for i in range(start, end):
-            print(self.degree[i])
-        print(f"************** The {start}-{end} least changing word **************")
+            words.append(self.degree[i])
+            if verbose:
+                print(self.degree[i])
+        return words
+
+    def get_least_changing_words(self, start=0, end=100, verbose=True):
+        words = []
+        if verbose:
+            print(f"************** The {start}-{end} least changing word **************")
         for i in range(-start, -end - 1, -1):
-            print(self.degree[i])
+            words.append(self.degree[i])
+            if verbose:
+                print(self.degree[i])
+            return words
 
     def get_degree_rank(self, keys):
         rank = [d[0] for d in self.degree]
@@ -435,6 +447,27 @@ class TimeSeriesPlotter:
         plt.title("Histogram of Degree of Semantic Change")
         plt.grid(True)
         plt.savefig(f"{self.output_dir}/semantic_change_histogram.png", dpi=300)
+
+    def make_tfidf_vs_w2v_dist(self, k=5000):
+        x = []
+        y = []
+        words = random.sample(list(set(self.tf_idf_vocab).intersection(set(self.w2v_vocab))), k=k)
+        for w in words:
+            x.append(self.ts["tf_idf"][w])
+            y.append(self.ts["w2v"][w])
+
+        x = np.expand_dims(np.array(x).flatten(), axis=1)
+        y = np.expand_dims(np.array(y).flatten(), axis=1)
+        pts = np.concatenate((x, y), axis=1)
+        pts = pts[pts[:, 1] < 0.9]
+
+        plt.figure("dist")
+        plt.scatter(pts[:, 0], pts[:, 1], alpha=0.7, s=5)
+        plt.xlabel("TF-IDF", fontweight="bold")
+        plt.ylabel("W2V", fontweight="bold")
+        plt.title(f"TF-IDF vs. W2V Deltas", fontweight="bold", fontsize=14)
+        plt.savefig(f"{self.output_dir}/tfidf_w2v_dist.png", dpi=300)
+        plt.show()
 
 
 if __name__ == "__main__":
@@ -464,6 +497,7 @@ if __name__ == "__main__":
     for key in args.semantic_change_keyword:
         time_series_plotter.make_semantic_change_plot(key=key)
 
-    time_series_plotter.get_most_least_changing_words(start=400, end=500)
+    # time_series_plotter.get_most_changing_words(start=400, end=500)
     time_series_plotter.make_degree_histogram()
-    time_series_plotter.get_degree_rank(args.tsne_keyword)
+    # time_series_plotter.get_degree_rank(args.tsne_keyword)
+    time_series_plotter.make_tfidf_vs_w2v_dist()
